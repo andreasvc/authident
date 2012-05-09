@@ -34,7 +34,7 @@ def getauthor(name):
 	"""return first word of filename, Capitalized."""
 	return name.split("/")[-1].split(".")[0].split()[0].strip(",").capitalize()
 
-def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook=False, topfragments=False):
+def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook=False, topfragments=False, breakdown=True):
 	green = "\033[32m"; red = "\033[31m"; gray = "\033[0m" # ANSI codes
 	names = set(map(getauthor, fragments.values()[0]))
 	results = {}
@@ -113,24 +113,27 @@ def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook
 			print r"\\"
 		print
 
-	print "Accuracy"
-	z=[]
-	for a in sorted(results):
-		acc = sum(1 for b in results[a] if a == getauthor(b)) / float(len(results[a]))
-		print getauthor(a).ljust(16), "&   ",
-		print "%.2f \\%% \\\\" % (100 * acc)
-		z.append(acc)
 	avg = sum(1 for a in results for b in results[a] if a == getauthor(b)) / float(sum(map(len, results.values())))
-	print "macro average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * sum(z)/float(len(z)))
-	print "micro average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * avg)
+	if breakdown:
+		print "Accuracy"
+		z=[]
+		for a in sorted(results):
+			acc = sum(1 for b in results[a] if a == getauthor(b)) / float(len(results[a]))
+			print getauthor(a).ljust(16), "&   ",
+			print "%.2f \\%% \\\\" % (100 * acc)
+			z.append(acc)
+		print "macro average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * sum(z)/float(len(z)))
+		print "micro average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * avg)
+	print "average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * avg)
 
 def readtest(inputdir, folds, chunks, devortest):
 	fragments = {}
 	m = 0
 	for x in range(folds):
 		for y in range(chunks):
-			files = glob("%s/*%d.%s%d" % (inputdir, x, devortest, y))
-			assert files
+			pattern = "%s/*%d.%s%d" % (inputdir, x, devortest, y)
+			files = glob(pattern)
+			assert files, pattern
 			for a in files:
 				possibleauthor, work = a.split("/")[-1].split("_")
 				if work not in fragments: fragments[work] = {}
@@ -183,14 +186,14 @@ def mergetest(fragments, splitchar=".", n=0):
 	otherwise everything is merged into a single chunk."""
 	new = {}
 	for text in fragments:
-		if n: m = int(text.split(splitchar)[-2]) / n
+		pre, post = text.rsplit(splitchar, 1)
+		if n: m = int(post) / n
 		for author in fragments[text]:
 			if n:
-				dest = new.setdefault("%s%s%d" % (text.rsplit(splitchar, 1)[0],
-					splitchar, m), {}).setdefault(author, {})
-			else:
-				dest = new.setdefault(text.rsplit(splitchar, 1)[0], {}
+				dest = new.setdefault("%s%s%d" % (pre, splitchar, m), {}
 					).setdefault(author, {})
+			else:
+				dest = new.setdefault(pre, {}).setdefault(author, {})
 			# if the frequencies are of the test text:
 			#for a,b in fragments[text][author].iteritems(): dest[a] += b
 			# if they come from the reference text:
@@ -206,64 +209,73 @@ def perbook():
 
 def federalist():
 	authorsets, sentsinwork, wordsinwork, nodesinwork = readtrain("fedsplits/*.*.train")
-	wordposngram = removecommon(readtest("fedngrams", 1))
+	ngrams = removecommon(readtest("fedngrams", 1))
 	frag = removecommon(readtest("fedfragments", 1))
 	nothresh = lambda _: True
 	norm = lambda x, y: float(len(frag[x][y])) #nodesinwork[y] / sentsinwork[y]
 	sumfunc = lambda (x,y): 3
-	evaluate(wordposngram,   sumfunc, nothresh, norm, verbose=True)
+	evaluate(ngrams,   sumfunc, nothresh, norm, verbose=True)
 	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x))
 	evaluate(frag,   sumfunc, nothresh, norm, verbose=True)
 	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x)) if x.startswith("(") else 3
-	evaluate(combine(wordposngram,   frag),   sumfunc, nothresh, norm, verbose=True)
+	evaluate(combine(ngrams,   frag),   sumfunc, nothresh, norm, verbose=True)
 
 def main(devortest):
 	assert devortest in ("dev", "test")
 	authorsets, sentsinwork, wordsinwork, nodesinwork = readtrain("splits/*.*.train")
 	print "trigrams:",
 	ngramdata = readtest("ngrams", 4, 25, devortest)
-	wordposngram = removecommon(ngramdata.copy())
-	wordposngram100 = removecommon(mergetest(ngramdata.copy(), n=5))
-	wordposngram500 = removecommon(mergetest(ngramdata.copy()))
+	ngrams = removecommon(ngramdata.copy())
+	ngrams100 = removecommon(mergetest(ngramdata.copy(), n=5, splitchar=devortest))
+	ngrams500 = removecommon(mergetest(ngramdata.copy(), splitchar=devortest))
 	print "fragments:",
 	fragdata = readtest("fragments", 4, 25, devortest)
 	frag = removecommon(fragdata.copy())
-	frag100 = removecommon(mergetest(fragdata.copy(), n=5))
-	frag500 = removecommon(mergetest(fragdata.copy()))
-	assert all(len(c) <= 20 for a in wordposngram for b in a for c in b)
-	assert all(len(c) <= 100 for a in wordposngram100 for b in a for c in b)
-	assert all(len(c) <= 500 for a in wordposngram500 for b in a for c in b)
-	assert all(len(c) <= 20 for a in frag for b in a for c in b)
-	assert all(len(c) <= 100 for a in frag100 for b in a for c in b)
-	assert all(len(c) <= 500 for a in frag500 for b in a for c in b)
+	frag100 = removecommon(mergetest(fragdata.copy(), n=5, splitchar=devortest))
+	frag500 = removecommon(mergetest(fragdata.copy(), splitchar=devortest))
+	print len(ngrams), len(ngrams100), len(ngrams500)
+	print len(frag), len(frag100), len(frag500)
+	assert len(ngrams) <= 500
+	assert len(ngrams100) <= 100
+	assert len(ngrams500) == 20
+	assert len(frag) <= 500
+	assert len(frag100) <= 100
+	assert len(frag500) == 20
+	assert all(len(a) == 5 for a in ngrams.values())
+	assert all(len(a) == 5 for a in ngrams100.values())
+	assert all(len(a) == 5 for a in ngrams500.values())
+	assert all(len(a) == 5 for a in frag.values())
+	assert all(len(a) == 5 for a in frag100.values())
+	assert all(len(a) == 5 for a in frag500.values())
 	nothresh = lambda _: True
 	freqthresh = lambda (x,y): y > 2
 	fragthresh = lambda (x,y): y > 2 or not x.startswith("(")
 	norm = lambda x, y: nodesinwork[y] / sentsinwork[y]
 
+	breakdown = False
 	sumfunc = lambda (x,y): 3
 	print "\ntrigrams (20 sents)",
-	evaluate(wordposngram,    sumfunc, nothresh, norm, verbose=False)
+	evaluate(ngrams,    sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
 	print "\ntrigrams (100 sents)",
-	evaluate(wordposngram100, sumfunc, nothresh, norm, verbose=False)
+	evaluate(ngrams100, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
 	#print "\ntrigrams (500 sents)",
-	#evaluate(mergetest(wordposngram500), sumfunc, nothresh, norm, verbose=False)
+	#evaluate(ngrams500, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
 	
 	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x))
 	print "\nfragments (20 sents)",
-	evaluate(frag,    sumfunc, nothresh, norm, verbose=False)
+	evaluate(frag,    sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
 	print "\nfragments (100 sents)",
-	evaluate(frag100, sumfunc, nothresh, norm, verbose=False)
+	evaluate(frag100, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
 	#print "\nfragments (500 sents)",
-	#evaluate(mergetest(frag500), sumfunc, nothresh, norm, verbose=False)
+	#evaluate(frag500, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
 	
 	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x)) if x.startswith("(") else 3
 	print "\ncombined (20 sents)",
-	evaluate(combine(wordposngram,    frag),      sumfunc, nothresh, norm, verbose=False)
+	evaluate(combine(ngrams,    frag),      sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
 	print "\ncombined (100 sents)",
-	evaluate(combine(wordposngram100, frag100),   sumfunc, nothresh, norm, verbose=False)
+	evaluate(combine(ngrams100, frag100),   sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
 	#print "\ncombined (500 sents)",
-	#evaluate(combine(wordposngram500, frag500), sumfunc, nothresh, norm, verbose=False, topfragments=False)
+	#evaluate(combine(ngrams500, frag500), sumfunc, nothresh, norm, verbose=False, topfragments=False, breakdown=breakdown)
 
 if __name__ == '__main__':
 	from sys import argv
