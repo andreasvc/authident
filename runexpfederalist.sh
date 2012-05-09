@@ -18,6 +18,7 @@ for a in fed/Hamilton\ {And,Or}\ Madison/*.stp; do
 	cp "$a" "fedsplits/Madison/Madison - `basename "$a"`.0.test0" 
 done
 
-python ngrams.py fedsplits fedngrams test \
+mkdir fedfragments && mkdir fedngrams \
+&& python ngrams.py fedsplits fedngrams test \
 && sh commonfragments.sh fedsplits fedfragments test \
 && python evaluate.py federalist

@@ -5,7 +5,6 @@ assert len(argv) == 4, "usage: %s inputdir outputdir dev|test" % argv[0]
 assert os.path.isdir(argv[1])
 indir = argv[1]
 wordposngram = "%s/" % argv[2]
-os.mkdir(wordposngram)
 assert argv[3] in ("dev", "test")
 devortest=argv[3]
 leaves = re.compile(r" ([^ )]+)\)")
@@ -15,8 +14,6 @@ print "extracting ngrams"
 for train in glob.glob("%s/*.*.train" % indir):
 	fold = int(train.split(".")[-2])
 	if fold > 3: continue
-	postrigrams = FreqDist(ingrams((tag for t in open(train)
-		for tag in pos.findall(t)), 3))
 	wordpostrigrams  = FreqDist(ingrams((porter.stem(word)+"/"+tag
 		for t in open(train)
 		for word, tag in zip(leaves.findall(t), pos.findall(t))), 3))
