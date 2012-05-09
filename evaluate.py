@@ -44,7 +44,8 @@ def find(sub, str, start):
 		idx = str.find(sub, idx+1)
 
 def contains(tree, frag):
-	""" Check whether a tree contains a fragment; both in string representation."""
+	""" Check whether a tree contains a fragment;
+	both in string representation."""
 	splitfrag = frag.split(" )") # components around frontier nodes
 	for idx in find(splitfrag[0], tree, 0):
 		if idx == -1: return False
@@ -79,7 +80,7 @@ def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook
 		inter = {}
 		# loop over possible authors
 		for author in sorted(fragments[text]):
-			inter[author] = sum(map(sumfunc, filter(condition, fragments[text][author].items()))) / normalization(author)
+			inter[author] = sum(map(sumfunc, filter(condition, fragments[text][author].items()))) / normalization(text, author)
 		if verbose:
 			for author in sorted(inter):
 				if inter[author] == max(inter.values()): l,r = "\\textbf{","}"
@@ -97,7 +98,7 @@ def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook
 			try: confidence = (100 * (max(inter.values()) - sorted(inter.values())[-2]) / float(max(inter.values())))
 			except ZeroDivisionError: confidence = 0.0
 			except IndexError: confidence = 0.0
-			print "& %s%5.2f \\%%%s \\\\" % ((red if confidence < 50 else green), confidence, gray)
+			print "& %s%5.2f%s " % ((red if confidence < 50 else green), confidence, gray)
 		elif verbose: print "\\\\"
 		prev = text
 	print
@@ -110,10 +111,7 @@ def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook
 			for label in ("(ROOT", "(S ", "(NP ", "(VP ", "(PP "):
 				guess = max(fragments[text], key=lambda x: sum(sumfunc(a) for a in fragments[text][x].items() if condition(a)) / norm(x))
 				try:
-					#frag = max([a for a in fragments[text][guess] if a.startswith(label) and terms(a) > 3], key=fragments[text][guess].get)
-					#frag = max((a for a,b in fragments[text][guess].iteritems() if b > 2 and a.startswith(label)),	key=lambda x: (contentwords(x), fragments[text][guess][x]))
 					frag = max((a[0] for a in fragments[text][guess].iteritems() if condition(a) and a[0].startswith(label)), key=lambda x: (sumfunc((x,fragments[text][guess][x])), fragments[text][guess][x]))
-					#frag = max([a for a in fragments[text][guess] if a.startswith(label) and terms(a) > 3], key=lambda x: (fragments[text][guess][x], terms(x)))
 				except ValueError: pass
 				else:
 					f1 = Tree(frag)
@@ -153,15 +151,16 @@ def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook
 	print "macro average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * sum(z)/float(len(z)))
 	print "micro average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * avg)
 
-def readtest(inputdir):
+def readtest(inputdir, n):
 	fragments = {}
 	n = 1
-	for a in glob("%s/*" % inputdir):
-		possibleauthor, work = a.split("/")[-1].split("_")
-		if work not in fragments: fragments[work] = {}
-		fragments[work][possibleauthor] = dict(
-			(a, int(b)) for a, b in (line.rsplit("\t", 1) for line in open(a)))
-		n += 1
+	for x in range(n):
+		for a in glob("%s/*%d" % (inputdir, x)):
+			possibleauthor, work = a.split("/")[-1].split("_")
+			if work not in fragments: fragments[work] = {}
+			fragments[work][possibleauthor] = dict(
+				(a, int(b)) for a, b in (line.rsplit("\t", 1) for line in open(a)))
+			n += 1
 	print "read %d test files" % n
 	assert fragments
 	return fragments
@@ -199,12 +198,20 @@ def removecommon(fragments):
 			new.setdefault(text, {})[author] = dict((a, b) for a,b in ft[author].items() if a not in u)
 	return new
 
-def mergetest(fragments):
-	# merge test sets
+def mergetest(fragments, splitchar=".", n=0):
+	""" merge test sets. a numeric id is expected after "splitchar".
+	if n is given, merge test chunks into partitions of length n,
+	otherwise everything is merged into a single chunk."""
 	new = {}
 	for text in fragments:
+		if n: m = int(text.split(splitchar)[-2]) / n
 		for author in fragments[text]:
-			dest = new.setdefault(text.rsplit(".",1)[0], {}).setdefault(author, {})
+			if n:
+				dest = new.setdefault("%s%s%d" % (text.rsplit(splitchar, 1)[0],
+					splitchar, m), {}).setdefault(author, {})
+			else:
+				dest = new.setdefault(text.rsplit(splitchar, 1)[0], {}
+					).setdefault(author, {})
 			# if the frequencies are of the test text:
 			#for a,b in fragments[text][author].iteritems(): dest[a] += b
 			# if they come from the reference text:
@@ -224,38 +231,72 @@ def splittest(fragments, split):
 			print t, n, len(dest)
 	return new
 
-if __name__ == '__main__':
-	if os.path.exists("dump.pickle"):
-		authorsets, sentsinwork, wordsinwork, nodesinwork, wordposngram20, wordposngram, frag20, frag = cPickle.load(open("dump.pickle", "rb"))
-	else:
-		authorsets, sentsinwork, wordsinwork, nodesinwork = readtrain("splits/*.train?")
-		wordposngram20 = removecommon(readtest("wordposngram20"))
-		wordposngram = removecommon(readtest("wordposngram"))
-		frag = removecommon(readtest("fragments"))
-		frag20 = splittest(frag, 20)
-		cPickle.dump((authorsets, sentsinwork, wordsinwork, nodesinwork, wordposngram20, wordposngram, frag20, frag), open("dump.pickle", "wb"), -1)
-	nothresh = lambda _: True
-	freqthresh = lambda (x,y): y > 2
-	fragthresh = lambda (x,y): y > 2 or not x.startswith("(")
-	norm = lambda x: nodesinwork[x] / sentsinwork[x]
-
-	sumfunc = lambda (x,y): 3
-	evaluate(wordposngram20, sumfunc, nothresh, norm, verbose=False)
-	evaluate(wordposngram,   sumfunc, nothresh, norm, verbose=False)
-	#evaluate(mergetest(wordposngram), sumfunc, nothresh, norm, verbose=False)
-	
-	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x))
-	evaluate(frag20, sumfunc, nothresh,   norm,  verbose=False)
-	evaluate(frag,   sumfunc, freqthresh, norm, verbose=False)
-	#evaluate(mergetest(frag), sumfunc, freqthresh, norm, verbose=False)
-	
-	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x)) if x.startswith("(") else 3
-	evaluate(combine(wordposngram20, frag20), sumfunc, nothresh,   norm, verbose=False)
-	evaluate(combine(wordposngram,   frag),   sumfunc, fragthresh, norm, verbose=False)
-	#evaluate(combine(mergetest(wordposngram), mergetest(frag)), sumfunc, fragthresh, norm, verbose=False, topfragments=False)
-
+def perbook():
 	nothresh = lambda _: True
 	norm = lambda _: 1
 	sumfunc = lambda _: 1
 	sumfunc = lambda (x, y): truenodes(x)
-	#evaluate(readtest("perbook"), sumfunc, nothresh, norm, verbose=True, perbook=True)
+	evaluate(readtest("perbook"), sumfunc, nothresh, norm, verbose=True, perbook=True)
+
+def federalist():
+	authorsets, sentsinwork, wordsinwork, nodesinwork = readtrain("fedsplits/*.*.train")
+	wordposngram = removecommon(readtest("fedngrams", 1))
+	frag = removecommon(readtest("fedfragments", 1))
+	nothresh = lambda _: True
+	norm = lambda x, y: float(len(frag[x][y])) #nodesinwork[y] / sentsinwork[y]
+	sumfunc = lambda (x,y): 3
+	evaluate(wordposngram,   sumfunc, nothresh, norm, verbose=True)
+	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x))
+	evaluate(frag,   sumfunc, nothresh, norm, verbose=True)
+	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x)) if x.startswith("(") else 3
+	evaluate(combine(wordposngram,   frag),   sumfunc, nothresh, norm, verbose=True)
+
+def main(devortest):
+	assert devortest in ("dev", "test")
+	authorsets, sentsinwork, wordsinwork, nodesinwork = readtrain("splits/*.*.train")
+	wordposngram20 = removecommon(readtest("wordposngram", 25))
+	wordposngram100 = removecommon(mergetest(readtest("wordposngram", 25), n=5))
+	wordposngram500 = removecommon(mergetest(readtest("wordposngram", 25)))
+	frag = removecommon(readtest("fragments", 25))
+	frag100 = removecommon(mergetest(readtest("fragments", 25), n=5))
+	frag500 = removecommon(mergetest(readtest("fragments", 25)))
+	assert all(len(c) <= 20 for a in wordposngram for b in a for c in b)
+	assert all(len(c) <= 100 for a in wordposngram100 for b in a for c in b)
+	assert all(len(c) <= 500 for a in wordposngram500 for b in a for c in b)
+	assert all(len(c) <= 20 for a in frag for b in a for c in b)
+	assert all(len(c) <= 100 for a in frag100 for b in a for c in b)
+	assert all(len(c) <= 500 for a in frag500 for b in a for c in b)
+	nothresh = lambda _: True
+	freqthresh = lambda (x,y): y > 2
+	fragthresh = lambda (x,y): y > 2 or not x.startswith("(")
+	norm = lambda x, y: nodesinwork[y] / sentsinwork[y]
+
+	sumfunc = lambda (x,y): 3
+	print "\ntrigrams (20 sents)",
+	evaluate(wordposngram, sumfunc, nothresh, norm, verbose=False)
+	print "\ntrigrams (100 sents)",
+	evaluate(wordposngram100,   sumfunc, nothresh, norm, verbose=False)
+	#print "\ntrigrams (500 sents)",
+	#evaluate(mergetest(wordposngram500, splitchar="test"), sumfunc, nothresh, norm, verbose=False)
+	
+	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x))
+	print "\nfragments (20 sents)",
+	evaluate(frag, sumfunc, nothresh,   norm,  verbose=False)
+	print "\nfragments (100 sents)",
+	evaluate(frag100,   sumfunc, freqthresh, norm, verbose=False)
+	#print "\nfragments (500 sents)",
+	#evaluate(mergetest(frag500, splitchar="test"), sumfunc, nothresh, norm, verbose=False)
+	
+	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x)) if x.startswith("(") else 3
+	print "\ncombined (20 sents)",
+	evaluate(combine(wordposngram, frag), sumfunc, nothresh,   norm, verbose=False)
+	print "\ncombined (100 sents)",
+	evaluate(combine(wordposngram100,   frag100),   sumfunc, fragthresh, norm, verbose=False)
+	#print "\ncombined (500 sents)",
+	#evaluate(combine(wordposngram500, frag500), sumfunc, nothresh, norm, verbose=False, topfragments=False)
+
+if __name__ == '__main__':
+	from sys import argv
+	if argv[1] == "federalist": federalist()
+	else: main(argv[1])
+

@@ -13,8 +13,7 @@ Requirements:
 Procedure:
 
 - prepare a directory "books/" with one directory for each author, each containing one file per work in UTF-8.
-- edit parseworks.sh to set the right paths and run. Will parse documents with stanford parser
-- run devtestsplits.py: make dev-test-train set splits with leave-one-out cross-validation, results written to "splits/"
-- edit commonfragments.sh to set the location of disco-dop and run. Will extract syntactic fragments, results written to "fragments/"
-- run evaluate.py: do classification & evaluation
+- edit parseworks.sh and parsefiles.sh to set the right paths for Java and the stanford parser
+- edit and run runexpbooks.sh
+- alternatively, run runexpfederalist.sh to download the federalist papers and evaluate on the disputed and co-authored papers.
 
