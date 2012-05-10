@@ -34,7 +34,7 @@ def getauthor(name):
 	"""return first word of filename, Capitalized."""
 	return name.split("/")[-1].split(".")[0].split()[0].strip(",").capitalize()
 
-def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook=False, topfragments=False, breakdown=True):
+def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook=False, topfragments=False, breakdown=True, conftable=False):
 	green = "\033[32m"; red = "\033[31m"; gray = "\033[0m" # ANSI codes
 	names = set(map(getauthor, fragments.values()[0]))
 	results = {}
@@ -97,7 +97,7 @@ def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook
 	if perbook: return
 	if topfragments: print
 
-	if verbose:
+	if conftable:
 		print "Confusion matrix"
 		ref  = [a for a in results for b in results[a]]
 		test = [getauthor(b) for a in results for b in results[a]]
@@ -129,18 +129,19 @@ def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook
 def readtest(inputdir, folds, chunks, devortest):
 	fragments = {}
 	m = 0
-	for x in range(folds):
-		for y in range(chunks):
-			pattern = "%s/*%d.%s%d" % (inputdir, x, devortest, y)
-			files = glob(pattern)
-			assert files, pattern
-			for a in files:
-				possibleauthor, work = a.split("/")[-1].split("_")
-				if work not in fragments: fragments[work] = {}
-				fragments[work][possibleauthor] = dict(
-					(a, int(b)) for a, b in (line.rsplit("\t", 1)
-						for line in open(a)))
-				m += 1
+	pattern = "%s/*.%s*" % (inputdir, devortest)
+	files = glob(pattern)
+	assert files, pattern
+	for a in files:
+		fold = int(a.rsplit(".", 2)[1])
+		chunk = int(a.rsplit(devortest, 1)[1])
+		possibleauthor, work = a.split("/")[-1].split("_")
+		if fold < folds and chunk < chunks:
+			if work not in fragments: fragments[work] = {}
+			fragments[work][possibleauthor] = dict(
+				(a, int(b)) for a, b in (line.rsplit("\t", 1)
+					for line in open(a)))
+			m += 1
 	print "read %d %s files" % (m, devortest)
 	assert fragments
 	return fragments
@@ -180,20 +181,19 @@ def removecommon(fragments):
 			new.setdefault(text, {})[author] = dict((a, b) for a,b in ft[author].items() if a not in u)
 	return new
 
-def mergetest(fragments, splitchar=".", n=0):
-	""" merge test sets. a numeric id is expected after "splitchar".
+def mergetest(fragments, spliton=".", n=0):
+	""" merge test sets. a numeric id is expected after "spliton".
 	if n is given, merge test chunks into partitions of length n,
 	otherwise everything is merged into a single chunk."""
-	new = {}
+	new = {}; m = 0
+	tmp = {}
 	for text in fragments:
-		pre, post = text.rsplit(splitchar, 1)
+		pre, post = text.rsplit(spliton, 1)
 		if n: m = int(post) / n
 		for author in fragments[text]:
-			if n:
-				dest = new.setdefault("%s%s%d" % (pre, splitchar, m), {}
-					).setdefault(author, {})
-			else:
-				dest = new.setdefault(pre, {}).setdefault(author, {})
+			newtext = "%s%s%d" % (pre, spliton, m)
+			tmp.setdefault(newtext, set()).add(text)
+			dest = new.setdefault(newtext, {}).setdefault(author, {})
 			# if the frequencies are of the test text:
 			#for a,b in fragments[text][author].iteritems(): dest[a] += b
 			# if they come from the reference text:
@@ -226,21 +226,18 @@ def main(devortest):
 	print "trigrams:",
 	ngramdata = readtest("ngrams", 4, 25, devortest)
 	ngrams = removecommon(ngramdata.copy())
-	ngrams100 = removecommon(mergetest(ngramdata.copy(), n=5, splitchar=devortest))
-	ngrams500 = removecommon(mergetest(ngramdata.copy(), splitchar=devortest))
+	ngrams100 = removecommon(mergetest(ngramdata.copy(), n=5, spliton=devortest))
+	ngrams500 = removecommon(mergetest(ngramdata.copy(), spliton=devortest))
 	print "fragments:",
 	fragdata = readtest("fragments", 4, 25, devortest)
 	frag = removecommon(fragdata.copy())
-	frag100 = removecommon(mergetest(fragdata.copy(), n=5, splitchar=devortest))
-	frag500 = removecommon(mergetest(fragdata.copy(), splitchar=devortest))
+	frag100 = removecommon(mergetest(fragdata.copy(), n=5, spliton=devortest))
+	frag500 = removecommon(mergetest(fragdata.copy(), spliton=devortest))
 	print len(ngrams), len(ngrams100), len(ngrams500)
 	print len(frag), len(frag100), len(frag500)
-	assert len(ngrams) <= 500
-	assert len(ngrams100) <= 100
-	assert len(ngrams500) == 20
-	assert len(frag) <= 500
-	assert len(frag100) <= 100
-	assert len(frag500) == 20
+	assert len(ngrams) == len(frag) <= 500
+	assert len(ngrams100) == len(frag100) <= 100
+	assert len(ngrams500) == len(frag500) <= 20
 	assert all(len(a) == 5 for a in ngrams.values())
 	assert all(len(a) == 5 for a in ngrams100.values())
 	assert all(len(a) == 5 for a in ngrams500.values())
@@ -255,27 +252,27 @@ def main(devortest):
 	breakdown = False
 	sumfunc = lambda (x,y): 3
 	print "\ntrigrams (20 sents)",
-	evaluate(ngrams,    sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
+	evaluate(ngrams,    sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
 	print "\ntrigrams (100 sents)",
-	evaluate(ngrams100, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
-	#print "\ntrigrams (500 sents)",
-	#evaluate(ngrams500, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
+	evaluate(ngrams100, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
+	print "\ntrigrams (500 sents)",
+	evaluate(ngrams500, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
 	
 	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x))
 	print "\nfragments (20 sents)",
-	evaluate(frag,    sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
+	evaluate(frag,    sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
 	print "\nfragments (100 sents)",
-	evaluate(frag100, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
-	#print "\nfragments (500 sents)",
-	#evaluate(frag500, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
+	evaluate(frag100, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
+	print "\nfragments (500 sents)",
+	evaluate(frag500, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
 	
 	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x)) if x.startswith("(") else 3
 	print "\ncombined (20 sents)",
-	evaluate(combine(ngrams,    frag),      sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
+	evaluate(combine(ngrams,    frag),      sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
 	print "\ncombined (100 sents)",
-	evaluate(combine(ngrams100, frag100),   sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
-	#print "\ncombined (500 sents)",
-	#evaluate(combine(ngrams500, frag500), sumfunc, nothresh, norm, verbose=False, topfragments=False, breakdown=breakdown)
+	evaluate(combine(ngrams100, frag100),   sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
+	print "\ncombined (500 sents)",
+	evaluate(combine(ngrams500, frag500), sumfunc, nothresh, norm, verbose=False, topfragments=False, breakdown=breakdown)
 
 if __name__ == '__main__':
 	from sys import argv

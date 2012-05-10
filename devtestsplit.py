@@ -1,4 +1,5 @@
 import os, random, re, codecs
+from itertools import izip_longest
 from sys import argv
 from glob import glob
 
@@ -18,15 +19,22 @@ def devtestsplit(indir, outdir):
 	authors = filter(os.path.isdir, glob("%s/*" % indir))
 	assert authors
 	for author in authors:
-		works = glob("%s/*.stp" % author)
+		works = sorted(glob("%s/*.stp" % author))
 		assert works, "%s/*.stp" % author
 		author = author.split("/", 1)[1]
 		os.mkdir("%s/%s" % (outdir, author))
 		for n, work in enumerate(works):
 			print work
 			otherworks = [a for a in works if a != work]
-			train = [a for otherwork in otherworks
-				for a in codecs.open(otherwork, encoding="UTF-8")]
+			# initial segment
+			#train = [a for otherwork in otherworks
+			#	for a in codecs.open(otherwork, encoding="UTF-8")]
+			# true random sample, not repeatable
+			#train = random.sample(train, trainchunk)
+			# interleave sentences of all works, to obtain a repeatable, representative sample.
+			# i.e., each work contributes at least min(len(work), len(allworks) / len(works))
+			train = [a for b in izip_longest(*(codecs.open(otherwork,
+				encoding="UTF-8") for otherwork in otherworks)) for a in b if a]
 			codecs.open("%s/%s.%d.train" % (outdir, author, n), "w",
 				encoding="UTF-8").writelines(train[:trainchunk])
 			text = codecs.open(work, encoding="UTF-8").readlines()
