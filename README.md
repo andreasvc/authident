@@ -6,10 +6,10 @@ Cf. http://staff.science.uva.nl/~acranenb/clfl2012.pdf
 
 Requirements:
 
-- [Stanford parser](http://nlp.stanford.edu/software/lex-parser.shtml]
-- [disco-dop](http://github.com/andreasvc/disco-dop]
-- [Python 2.6+](http://www.python.org]
-- [NLTK](http://www.nltk.org]
+- [Stanford parser](http://nlp.stanford.edu/software/lex-parser.shtml)
+- [disco-dop](http://github.com/andreasvc/disco-dop)
+- [Python 2.6+](http://www.python.org)
+- [NLTK](http://www.nltk.org)
 
 Usage:
 
