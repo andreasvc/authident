@@ -1,4 +1,5 @@
 import os, re, cPickle
+from os.path import basename
 from glob import glob
 from pprint import pprint
 from nltk import Tree, ConfusionMatrix
@@ -32,7 +33,7 @@ def depth(a):
 
 def getauthor(name):
 	"""return first word of filename, Capitalized."""
-	return name.split("/")[-1].split(".")[0].split()[0].strip(",").capitalize()
+	return basename(name).split(".")[0].split(",")[0].capitalize()
 
 def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook=False, topfragments=False, breakdown=True, conftable=False):
 	green = "\033[32m"; red = "\033[31m"; gray = "\033[0m" # ANSI codes
@@ -74,7 +75,7 @@ def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook
 			print "& %s%5.2f%s " % ((red if confidence < 50 else green), confidence, gray)
 		elif verbose: print "\\\\"
 		prev = text
-	print
+	if verbose: print
 
 	if topfragments: print "top fragments"
 	for name in sorted(names) if topfragments else ():
@@ -124,7 +125,7 @@ def evaluate(fragments, sumfunc, condition, normalization, verbose=True, perbook
 			z.append(acc)
 		print "macro average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * sum(z)/float(len(z)))
 		print "micro average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * avg)
-	print "average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * avg)
+	else: print "average:".ljust(16), "&   %6.2f \\%% \\\\" % (100 * avg)
 
 def readtest(inputdir, folds, chunks, devortest):
 	fragments = {}
@@ -235,9 +236,9 @@ def main(devortest):
 	frag500 = removecommon(mergetest(fragdata.copy(), spliton=devortest))
 	print len(ngrams), len(ngrams100), len(ngrams500)
 	print len(frag), len(frag100), len(frag500)
-	assert len(ngrams) == len(frag) <= 500
-	assert len(ngrams100) == len(frag100) <= 100
-	assert len(ngrams500) == len(frag500) <= 20
+	assert len(ngrams) == len(frag) == 500
+	assert len(ngrams100) == len(frag100) == 100
+	assert len(ngrams500) == len(frag500) == 20
 	assert all(len(a) == 5 for a in ngrams.values())
 	assert all(len(a) == 5 for a in ngrams100.values())
 	assert all(len(a) == 5 for a in ngrams500.values())
@@ -249,29 +250,27 @@ def main(devortest):
 	fragthresh = lambda (x,y): y > 2 or not x.startswith("(")
 	norm = lambda x, y: nodesinwork[y] / sentsinwork[y]
 
-	breakdown = False
-	sumfunc = lambda (x,y): 3
-	print "\ntrigrams (20 sents)",
-	evaluate(ngrams,    sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
-	print "\ntrigrams (100 sents)",
-	evaluate(ngrams100, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
-	print "\ntrigrams (500 sents)",
-	evaluate(ngrams500, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
-	
-	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x))
-	print "\nfragments (20 sents)",
-	evaluate(frag,    sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
-	print "\nfragments (100 sents)",
-	evaluate(frag100, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
-	print "\nfragments (500 sents)",
-	evaluate(frag500, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
-	
+	breakdown = False; conftable = False
 	sumfunc = lambda (x,y): len(fragcontentwordsre.findall(x)) if x.startswith("(") else 3
-	print "\ncombined (20 sents)",
-	evaluate(combine(ngrams,    frag),      sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
-	print "\ncombined (100 sents)",
-	evaluate(combine(ngrams100, frag100),   sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=True)
-	print "\ncombined (500 sents)",
+	print "trigrams   (20 sents)",
+	evaluate(ngrams, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=conftable)
+	print "fragments  (20 sents)",
+	evaluate(frag, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=conftable)
+	print "combined   (20 sents)",
+	evaluate(combine(ngrams, frag), sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=conftable)
+	
+	print "\ntrigrams  (100 sents)",
+	evaluate(ngrams100, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=conftable)
+	print "fragments (100 sents)",
+	evaluate(frag100, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=conftable)
+	print "combined  (100 sents)",
+	evaluate(combine(ngrams100, frag100), sumfunc, nothresh, norm, verbose=False, breakdown=breakdown, conftable=conftable)
+	
+	print "\ntrigrams  (500 sents)",
+	evaluate(ngrams500, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
+	print "fragments (500 sents)",
+	evaluate(frag500, sumfunc, nothresh, norm, verbose=False, breakdown=breakdown)
+	print "combined  (500 sents)",
 	evaluate(combine(ngrams500, frag500), sumfunc, nothresh, norm, verbose=False, topfragments=False, breakdown=breakdown)
 
 if __name__ == '__main__':
